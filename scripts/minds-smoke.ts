@@ -314,8 +314,12 @@ Platform details that shaped the implementation:
    risks mistaking a previous reply for the current one.
 5. \`senderType\`: \`0\`/\`2\` = Mind, \`1\` = human.
 6. Circle \`GET\` returns \`CircleMember[]\`; \`POST\`/\`DELETE\` return
-   \`{ items, summary }\` — different shapes. \`summary.alreadyInCircle\` is the
-   idempotency signal CollabOS uses.
+   \`{ items, summary }\` — different shapes. **The summary counters are not populated.**
+   Verified live on 2026-07-30: an add that genuinely created a new party returned
+   \`{activated:0, humansAdded:0, humansCreatedAndAdded:0, alreadyInCircle:0, totalProcessed:0}\`.
+   Success must therefore be confirmed by re-reading the Circle, not by inspecting the
+   summary — treating a counter as the success signal would report failure on a successful
+   mutation.
 7. Circles accept **human** collaborator emails only, not Mind
    \`@hellominds.ai\` addresses. CollabOS rejects the latter before any network call.
 

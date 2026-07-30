@@ -19,7 +19,7 @@ This is an in-progress hackathon build. What is **actually working right now**, 
 | Milestone | Status |
 | --- | --- |
 | 0 — Repository & documentation inspection | **Complete** — see [`docs/implementation-plan.md`](docs/implementation-plan.md) |
-| 1 — Minds platform proof | **Partially complete — blocked on credentials.** Unauthenticated half proven against the live API; the rest is automated and runs the moment a key exists |
+| 1 — Minds platform proof | **Complete** — 8/8 PASS against the live platform |
 | 2 — Foundation | **Complete** — Postgres + Prisma + migrations + seed + env validation + Minds wrapper + audit log + state machine |
 | 3 — Recommendation & approval | **Complete** — objective form, structured Mind ranking with repair-retry, Partner Review UI, approval gates, Activity Log |
 | 4 — Circle & campaign | **Complete** — Circle admission, shared brief, deliverable, Collaboration Room, signed collaborator link, emergency cleanup command |
@@ -27,29 +27,26 @@ This is an in-progress hackathon build. What is **actually working right now**, 
 | 6 — Completion loop | **Complete** — final approval, completion, relationship write-back, revision round, campaign report |
 | 7 — Quality & demo polish | **Complete** — Playwright E2E, loading/error states, accessibility basics, demo reset, full documentation, demo script |
 
-Quality gates as of the last run: `lint` ✅ · `typecheck` ✅ · `test` ✅ (214 tests) · `build` ✅ ·
+Quality gates as of the last run: `lint` ✅ · `typecheck` ✅ · `test` ✅ (232 tests) · `build` ✅ ·
 `test:e2e` ✅ (2 tests)
 
-The full §25 vertical slice has been run end-to-end against live Postgres and Mailpit —
-objective → ranking → partner approval → outreach approval → real email → acceptance →
-Circle → brief → deliverable → **autonomous worker follow-up** → submission → final approval
-→ completed → relationship memory updated. Only the Mind is scripted, because no Builder API
-key exists yet.
+### Verified against the live platform
 
-Milestone 3 is verified by integration tests that run the real state machine, real Prisma, and
-real audit log against Postgres with only the Mind scripted — including that Mira is ranked
-above two larger audiences, that a brand-unsafe partner is force-rejected even when the Mind
-recommends it, and that a failed Mind call cannot produce a false success state.
+The full vertical slice has been run end to end against the real Minds platform, with **no
+fixture or scripted component anywhere** — all 16 Definition-of-Done items are proven. The real
+Mind ranked Mira first (`fit 96`, smallest audience) citing her stored collaboration history,
+rejected Nova on brand-safety grounds without needing CollabOS's override, and wrote the
+follow-up wording itself. A real Circle mutation created a real party, confirmed independently
+via `minds circle show`.
 
-### The one genuine blocker
+CollabOS also **boots and runs without credentials**, reporting the Mind as disconnected rather
+than fabricating a recommendation, a follow-up, or a Circle result. See
+[Connecting a Mind](#connecting-a-mind) and
+[`docs/known-limitations.md`](docs/known-limitations.md) §1 for the measured evidence.
 
-**No Minds Builder API key is configured on this machine**, so the Mind cannot be
-reasoned with yet. This is a credential gap, not a code gap: the integration is fully
-implemented against the official client library.
-
-CollabOS deliberately **boots and runs in this state** and reports the Mind as
-disconnected. It does not fabricate a recommendation, a follow-up, or a Circle result
-to paper over the gap. See [Connecting a Mind](#connecting-a-mind).
+**Plan for latency:** a full campaign takes **~13 minutes** and **~15.4 cognition**. Partner
+ranking alone is 86–145 s. `MINDS_REPLY_TIMEOUT_MS` must stay at `240000` — the original 120 s
+default timed out on a healthy Mind.
 
 ---
 
@@ -129,15 +126,15 @@ cp .env.example .env
 | `MAILPIT_HOST` / `MAILPIT_SMTP_PORT` | no | Local test SMTP, defaults `localhost:1025` |
 | `FOLLOW_UP_DELAY_SECONDS` | no | Deliverable window. `180` = the 3-minute demo |
 | `LINK_SIGNING_SECRET` | no | HMAC secret for acceptance links; dev default if unset |
-| `MINDS_REPLY_TIMEOUT_MS` | no | Mind reply timeout, default `120000` |
+| `MINDS_REPLY_TIMEOUT_MS` | no | Mind reply timeout, default `240000`. Do not lower — ranking takes 86–145 s |
 
 Configuration is validated by Zod at startup (`src/env.ts`) — the app refuses to boot
 on a bad config rather than failing later inside a request.
 
-> ⚠️ **Port note:** on this machine port **3000 is already occupied** by an unrelated
-> service, so `next dev` falls back to **3001**. If that applies to you, set
-> `APP_URL=http://localhost:3001` or signed collaborator links will point at the wrong
-> server.
+> ⚠️ **Port note:** `APP_URL` must match the port you actually serve on, or the signed
+> collaborator acceptance links in outbound email will point at the wrong server. On the
+> development machine port 3000 is occupied by an unrelated service, so this repo runs on
+> **3100** (`npm run dev -- -p 3100`) with `APP_URL=http://localhost:3100`.
 
 ### 3. Start infrastructure
 
@@ -248,7 +245,7 @@ call is recorded as `attempted` + `failed` and can never render as success.
 ## Tests
 
 ```bash
-npm test               # 214 tests — unit + integration
+npm test               # 232 tests — unit + integration
 npm run test:unit      # pure, no infrastructure needed
 npm run test:integration
 npm run test:e2e       # Playwright — the full vertical slice in a browser
@@ -261,8 +258,9 @@ minutes. The E2E test drives a real HTTP server, so it shortens the configured d
 
 Tests bind a scripted `MindsPort` double. That is dependency injection for
 determinism — the production binding is always the real client library, and a failed
-integration is never hidden behind a mock. **It also means no automated test proves the Mind
-reasons well;** that gap is recorded in `docs/known-limitations.md` rather than glossed over.
+integration is never hidden behind a mock. **No automated test proves the Mind reasons well** —
+that was verified manually against the live platform instead, and the evidence is recorded in
+`docs/known-limitations.md` §1.
 
 Full detail in [`docs/test-plan.md`](docs/test-plan.md).
 

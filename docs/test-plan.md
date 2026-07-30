@@ -1,7 +1,7 @@
 # Test Plan
 
 ```bash
-npm test               # 214 tests — unit + integration
+npm test               # 232 tests — unit + integration
 npm run test:unit      # pure, no infrastructure needed
 npm run test:integration
 npm run test:e2e       # Playwright, 2 tests
@@ -68,8 +68,8 @@ report.
 The scripted and fixture Minds are dependency injection for determinism. The production binding
 is always `MindsClientAdapter` against the real client library. A scripted Mind lets tests
 assert *CollabOS's* behaviour rather than a model's wording — but it means **no automated test
-proves the Mind reasons well.** That gap is recorded in `docs/known-limitations.md`, not papered
-over.
+proves the Mind reasons well.** That was verified manually against the live platform instead; see
+§6 and `docs/known-limitations.md` §1.
 
 The E2E test runs with `COLLABOS_UNSAFE_FIXTURE_MIND=1`, which forces a red warning banner onto
 every page and marks every stored exchange `fixtureMode: true`.
@@ -119,8 +119,13 @@ but only exercising the running product surfaces integration-level defects.
 
 ## 6. Known gaps
 
-- **No test proves the real Mind reasons correctly.** Requires a Builder API key.
-- **No test exercises a real Circle mutation** against `api.build.hellominds.ai`.
+- **No test proves the real Mind reasons correctly.** This was verified *manually* against the
+  live platform (see `docs/known-limitations.md` §1 — Mira ranked first with `fit 96`, reproduced
+  twice), but it is not automated. Automating it would be slow (~145 s per call), cost cognition
+  on every run, and assert on model output that is legitimately allowed to vary.
+- **No test exercises a real Circle mutation.** Also verified manually — a real party was created
+  and confirmed via `minds circle show`. Automating it would mutate live platform state on every
+  test run, which is the wrong trade for a suite that should be safe to run repeatedly.
 - **No accessibility audit tooling** (axe, Lighthouse). Manual basics only: single `<h1>` per
   page, skip link, `:focus-visible`, `role="status"`/`role="alert"` on live regions, `aria-busy`
   on pending buttons, labelled form controls, `prefers-reduced-motion` honoured.

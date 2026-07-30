@@ -57,8 +57,11 @@ export interface CircleAddOutcome {
 /**
  * Adds the configured collaborator to the Mind's Circle.
  *
- * Idempotent at two levels: the platform reports `alreadyInCircle`, and the local
- * `CircleMembership` row is upserted on `(campaignId, collaboratorEmail)`.
+ * Idempotency comes from READING, not from the platform's mutation summary. Verified live:
+ * a successful add returns an all-zero summary, so `alreadyInCircle` cannot be used to detect
+ * anything. What actually works is the pre-mutation `getCircle()` check inside
+ * `addCircleMember` (returns `already_member` early) plus the local `CircleMembership` upsert
+ * on `(campaignId, collaboratorEmail)`.
  */
 export async function addApprovedCollaboratorToCircle(input: {
   campaignId: string;

@@ -142,7 +142,21 @@ silently — "the Mind recommended a partner it should have rejected" is informa
 keeping. Approval of a blocked partner is refused server-side; the UI control is replaced, not
 merely disabled.
 
-### 3.7 Resumable pumps over linear scripts
+### 3.7 Circle success means re-reading, never trusting the response
+
+Verified live on 2026-07-30: a Circle add that genuinely created a new party returned an
+**all-zero** summary — `{humansAdded:0, humansCreatedAndAdded:0, alreadyInCircle:0,
+totalProcessed:0}`. The member was demonstrably present afterwards.
+
+So the obvious implementation — `if (summary.humansAdded > 0) success` — would report failure on a
+working mutation and strand the campaign at `circle_add_failed`. CollabOS instead reads the Circle
+back and checks for the member; the summary is stored as audit metadata only. Idempotency
+("already a member") is detected by the read *before* mutating, for the same reason.
+
+This is the clearest case in the project where "never fabricate success" and "never fabricate
+failure" turned out to be the same discipline.
+
+### 3.8 Resumable pumps over linear scripts
 
 `advanceAfterAcceptance` walks Circle → brief → deliverable with each block guarded by current
 state. Three external systems participate, so any step can fail midway. Idempotent and

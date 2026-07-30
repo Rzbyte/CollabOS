@@ -357,6 +357,14 @@ export class MindsClientAdapter implements MindsPort {
       }),
     );
 
+    // Reading the Circle back is the ONLY trustworthy success signal.
+    //
+    // Verified against the live platform 2026-07-30: a mutation that genuinely created a new
+    // party and added it returned an all-zero summary —
+    // `{activated:0, humansAdded:0, humansCreatedAndAdded:0, alreadyInCircle:0, totalProcessed:0}`.
+    // Treating any summary counter as the success signal would therefore report FAILURE on a
+    // successful add, stranding the campaign at `circle_add_failed`. The summary is stored for
+    // audit only.
     const after = await this.getCircle();
     const summary = sanitiseErrorMessage(JSON.stringify(mutation.summary ?? {}));
 
@@ -364,13 +372,16 @@ export class MindsClientAdapter implements MindsPort {
       throw new CollabOsMindsError({
         code: "MINDS_TRANSPORT_ERROR",
         message:
-          `Circle mutation reported success but the collaborator is not listed in the ` +
-          `Circle afterwards. Platform summary: ${summary}`,
+          `Circle mutation completed but the collaborator is not listed in the Circle ` +
+          `afterwards. Platform summary: ${summary}`,
         retryable: false,
         correlationId,
       });
     }
 
+    // The pre-mutation read above already returned early for an existing member, so reaching
+    // here means the address was absent before and is present now. `alreadyInCircle` is
+    // consulted only in case the platform starts populating it later; it is not depended on.
     const alreadyThere = Number(mutation.summary?.alreadyInCircle ?? 0) > 0;
 
     return {

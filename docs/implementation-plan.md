@@ -103,10 +103,16 @@ official client library covers 100% of the capabilities `CLAUDE.md` §10 asks fo
    Without the baseline, a stale prior reply can be mistaken for the new one. CollabOS always
    captures the baseline first.
 5. **`senderType` disambiguates authorship**: `0` or `2` = Mind, `1` = human.
-6. **Circle mutation returns a summary, not just members.** `POST`/`DELETE` return
-   `{ items, summary }` where `summary.alreadyInCircle` / `alreadyInCircle`-style counters make
-   "already exists" detectable — this is exactly the idempotency signal §16 requires. `GET` returns
-   `CircleMember[]` directly (a *different* shape — do not conflate).
+6. **Circle mutation returns `{ items, summary }`; `GET` returns `CircleMember[]` directly.**
+   Two different shapes — do not conflate them.
+
+   **Correction after live testing (2026-07-30):** the plan originally assumed
+   `summary.alreadyInCircle` would be the idempotency signal §16 requires. It is not. On a
+   mutation that genuinely created and added a new party, **every summary counter came back
+   zero** (`humansAdded:0`, `humansCreatedAndAdded:0`, `alreadyInCircle:0`, `totalProcessed:0`),
+   confirmed independently with `minds circle show`. Relying on a counter would have reported
+   failure on a successful add. Idempotency is therefore detected by the **pre-mutation** read,
+   and success by the **post-mutation** read. The summary is audit metadata only.
 7. **Circles are the platform's trust gate.** Official wording: "Circles are how Minds and humans get
    permission to talk to each other." A new Mind hears only its Steward; everyone else is blocked
    until explicitly added, and unknown senders are *silently* dropped. The Steward is permanent and

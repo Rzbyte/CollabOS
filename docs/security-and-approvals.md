@@ -99,7 +99,7 @@ Tested: a JWT embedded in a Mind error does not survive into
 | Add only after creator approval | `addApprovedCollaboratorToCircle` verifies an `approved` `partner_selection` row exists in the database, not just campaign state |
 | No arbitrary emails from browser input | The address comes **only** from `COLLABORATOR_TEST_EMAIL`. The signed token carries no email. |
 | Verify membership before mutation | `getCircle()` before `addCircleMembers` |
-| "Already exists" is idempotent success | `summary.alreadyInCircle` → `already_member`, treated as success |
+| "Already exists" is idempotent success | Detected by the **pre-mutation** `getCircle()` read, which returns `already_member` early. Not from the platform summary — see the note below. |
 | Store the returned result | Sanitised summary in `CircleMembership.externalReference` |
 | Support removal | `removeCollaboratorFromCircle` + Room control on terminal campaigns |
 | Show Circle state in the UI | Room reads **live** platform state each render |
@@ -109,6 +109,24 @@ Tested: a JWT embedded in a Mind error does not survive into
 
 When the platform Circle cannot be read, the Room marks the stored row "Unverified right now"
 rather than presenting the last known status as current fact.
+
+### The mutation summary cannot be trusted
+
+Verified against the live platform on 2026-07-30. A Circle add that genuinely created a new
+party (`partyId 578d31f5-…`, confirmed independently via `minds circle show`) returned:
+
+```json
+{"activated":0,"deactivated":0,"notInCircle":0,"mindsAdded":0,
+ "humansAdded":0,"humansCreatedAndAdded":0,"alreadyInCircle":0,"totalProcessed":0}
+```
+
+Every counter is zero on a **successful** mutation. Any implementation using
+`summary.humansAdded > 0` or `totalProcessed > 0` as its success signal would report failure on
+a working add and strand the campaign at `circle_add_failed`.
+
+CollabOS is safe from this because success is defined as "the platform lists the member when we
+read the Circle back", not "the platform said it did something". The summary is stored on
+`CircleMembership.externalReference` for audit and nothing else.
 
 ---
 

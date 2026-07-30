@@ -4,46 +4,60 @@ Honest record of what does not work, what is not built, and what was discovered 
 the platform. Kept current as the build progresses — CLAUDE.md §24 requires reporting
 platform limitations rather than overclaiming.
 
-**Last updated:** 2026-07-30 (end of Milestone 2)
+**Last updated:** 2026-07-30, after end-to-end verification against the live Minds platform.
 
 ---
 
-## 1. Blocking: no Minds credentials on this machine
+## 1. Live verification status — all 16 Definition-of-Done items proven
 
-**Impact: high.** Five Milestone 1 checks cannot be completed.
+Credentials were supplied on 2026-07-30 and the full vertical slice was run against the real
+platform with **no fixture or scripted component anywhere** (verified: 7 Mind exchanges
+recorded, 0 with `fixtureMode: true`).
 
-No `MINDS_BUILDER_API_KEY` exists in the environment, in `~/.minds`, or in
-`~/.config/minds`. Verified without printing any value.
+Milestone 1: **8/8 PASS.** Mind `CollabOS` on `minimax/minimax-m3`, cognition read live, Circle
+read live, test message round-tripped.
 
-| Milestone 1 step | Status |
+The three items that were previously unprovable:
+
+| # | Item | Result |
+| --- | --- | --- |
+| **2** | Mind recommends Mira over Alex and Nova from seeded context | **Proven.** `#1 Mira [recommended] fit 96` (48k audience) · `#2 Alex [consider] fit 45` (210k) · `#3 Nova [reject] fit 0` (540k). Reproduced across two independent runs. |
+| **4** | Controlled collaborator added to the Mind's Circle | **Proven.** New party `578d31f5-…` created and added, confirmed independently via `minds circle show`. |
+| **8** | Mind produces contextual follow-up wording | **Proven.** Referenced the specific deliverable, acknowledged the passed deadline, and offered an extension — in Maya's voice and Mira's stated concise style. |
+
+Two findings worth noting because they validate design decisions:
+
+- The Mind **rejected Nova on its own reasoning** — `overrides: none`. The deterministic
+  brand-safety override never had to fire, though it remains as the guarantee.
+- The relationship write-back **lowered** Mira's reliability, 0.95 → 0.75, because she genuinely
+  delivered late and needed the reminder. The learning loop records what happened rather than
+  what flatters the partner. The Mind's debrief independently advised weighing "this
+  collaboration's reminder-dependent deadline" in future recommendations.
+
+Audit totals for the run: `proposed=32 approved=3 attempted=29 succeeded=29 failed=0` —
+succeeded never exceeds attempted, confirming the approval-lifecycle fix holds in production.
+
+### Measured performance (plan accordingly)
+
+| Operation | Latency |
 | --- | --- |
-| Validate Node 22+ | Pass — `v22.13.1` |
-| Validate CLI version | Pass — `0.1.3` (latest) |
-| `minds doctor` | Ran — `api_build_ping` **pass**, `builder_api_key` **absent** |
-| Live API reachability | **Proven** — public Bazaar returned `totalCount: 3506` |
-| List Minds | **Blocked** |
-| Validate configured Mind ID | **Blocked** |
-| Cognition balance | **Blocked** |
-| Read Circle state | **Blocked** |
-| Send safe test message | **Blocked** |
+| Partner ranking | 86–145 s |
+| Outreach wording | 137 s |
+| Circle add + brief | 182 s |
+| Follow-up wording | 148 s |
+| Debrief | 182 s |
+| **Full campaign** | **~13 min, ~15.4 cognition** |
 
-The platform is reachable and the CLI works; only authentication is missing.
-
-**Mitigation, not a workaround.** The integration is fully implemented against the
-official client library. `npm run minds:smoke` performs every blocked step and
-regenerates `docs/minds-smoke-test.md` from real results, so Milestone 1 completes with
-one command once a key is supplied. The setup checklist is in that file.
-
-**What CollabOS does NOT do about it:** it does not fabricate a recommendation, invent a
-follow-up, simulate a Circle result, or fall back to a hidden mock. Mind-dependent work
-records a `failed` `AgentAction` with error code `MINDS_NOT_CONFIGURED`, and the UI
-states plainly that the Mind is not connected.
+This forced a real bug fix: `MINDS_REPLY_TIMEOUT_MS` defaulted to 120 s against a 145 s
+ranking call, so a healthy Mind would have timed out and reported "could not produce
+recommendations". Raised to 240 s. It also made the original 2-minute demo script
+unachievable — see `docs/demo-script.md`, now rewritten around measured timings.
 
 ---
 
 ## 2. All seven milestones are complete
 
-Gates at last run: `lint` ✅ · `typecheck` ✅ · `test` ✅ (214) · `build` ✅ · `test:e2e` ✅ (2).
+Gates at last run: `lint` ✅ · `typecheck` ✅ · `test` ✅ (232) · `build` ✅ · `test:e2e` ✅ (2).
 
 ### The offline fixture Mind — read this before demoing
 
@@ -54,8 +68,12 @@ rows in the Activity Log, warns on the server console, and reports a cognition b
 rather than a plausible number.
 
 **It must never be used for a demo, a screenshot presented as real, or as evidence that the Minds
-integration works.** It exists so one automated test can cover the full UI flow. The real
-integration remains unverified end-to-end until a Builder API key exists.
+integration works.** It exists so one automated test can cover the full UI flow without
+credentials.
+
+The real integration is now verified end-to-end (§1), so the fixture Mind's only remaining
+purpose is keeping the E2E test runnable on a machine with no API key. Check the banner is absent
+before recording anything.
 
 ### Bugs found during Milestone 7, all invisible to the static gates
 
@@ -85,8 +103,8 @@ only performance figure that can exist is one the creator typed in themselves. I
 and stays null when unreported — never estimated, never defaulted, and the report says so
 outright in a dedicated "What this report does not claim" section.
 
-**Not proven:** a real Mind debrief, for the same missing-credential reason as the other
-Mind-dependent steps.
+**Since proven (§1):** the Mind debrief ran live and returned usable guidance — it advised
+weighing "this collaboration's reminder-dependent deadline" in future partner choices.
 
 ### Audit-lifecycle bug found and fixed in Milestone 6
 
@@ -119,9 +137,9 @@ compare-and-swap standing down even when the lease is bypassed, opted-out and
 creator-rejected partners being suppressed, an already-submitted deliverable being skipped,
 transient-failure recovery, and the bounded-retry cutoff.
 
-**Not proven:** a follow-up whose wording came from a real Mind. Without a Builder API key
-the Mind call fails, which is the correct behaviour but means the contextual-wording claim
-rests on the prompt content and the scripted tests, not on observed model output.
+**Since proven (§1):** the follow-up wording came from the real Mind. It named the specific
+deliverable, acknowledged the passed deadline, and offered an extension — matching Maya's calm
+brand voice and Mira's stated preference for concise, practical messages.
 
 ### What Milestone 4 has and has not proven
 
@@ -133,11 +151,10 @@ candidate names, or reliability scores). Circle add is idempotent, and a failed 
 mutation leaves the campaign at `circle_add_pending` with the membership stored as `failed`
 — never `circle_added`, and with no brief or deliverable created behind it.
 
-**Not proven:** a *real* Circle mutation against the Minds platform. The end-to-end
-verification used a scripted port for the Circle call because no Builder API key exists, so
-`addCircleMembers` has never been exercised against `api.build.hellominds.ai` in this
-repository. The client-library call itself is written against the verified 0.1.3 type
-contract with read-back confirmation, but the round trip is untested.
+**Since proven (§1):** `addCircleMembers` ran against `api.build.hellominds.ai` and created
+a real party, confirmed independently with `minds circle show`. That run also exposed the
+all-zero mutation summary documented in §3.1 — the read-back confirmation described above is
+precisely what stopped a successful add being reported as a failure.
 
 Related UI honesty note: when the platform Circle cannot be read, the Room marks the stored
 membership row as "Unverified right now" rather than presenting the last known status as
@@ -149,10 +166,9 @@ current fact.
 approval pipeline, structured-output validation with exactly one repair retry, the
 brand-safety override, both human-control gates, and the failure paths.
 
-**Not proven:** that a *real* Mind ranks Mira above Alex and Nova. The integration tests
-script the Mind's reply, which makes CollabOS's handling deterministic but says nothing
-about model judgement. That claim can only be verified with a Builder API key, by running
-the flow in the UI and reading the recorded prompt and reply on the Activity Log page.
+**Since proven (§1):** the real Mind ranked Mira first with `fit 96` on the smallest audience,
+citing her stored collaboration history, and rejected Nova on brand-safety grounds without
+needing CollabOS's override. Reproduced across two independent runs.
 
 The prompt does supply everything needed for the Mind to get it right — the prohibited
 topics, the relationship history, the previous decline reason, and an explicit instruction
@@ -189,7 +205,29 @@ Concrete demonstration of why §8 says to treat `--help` as the source of truth.
 
 `GET /v1/circles/{mindId}` returns `CircleMember[]` **directly**, while `POST`/`DELETE`
 return `{ items, summary }`. Conflating them would break Circle state rendering.
-`summary.alreadyInCircle` is the idempotency signal CollabOS relies on.
+The summary counters, however, are **not populated** — see §3.1 below.
+
+### 3.1 The Circle mutation summary returns all zeros, even on success
+
+Discovered by live testing on 2026-07-30, and the single most consequential platform quirk
+found in this project. A Circle add that genuinely created a new party returned:
+
+```json
+{"activated":0,"humansAdded":0,"humansCreatedAndAdded":0,"alreadyInCircle":0,"totalProcessed":0}
+```
+
+The member was verifiably present afterwards (`minds circle show` confirmed
+`partyId 578d31f5-…`, `isSteward:false`). So the mutation worked and the report said nothing
+happened.
+
+Any implementation treating `summary.humansAdded > 0` as "the add succeeded" — the most natural
+reading of the response shape — would report **failure on a working mutation** and strand the
+campaign at `circle_add_failed`. CollabOS avoids this only because success is defined as
+re-reading the Circle and finding the member, never as trusting the platform's own report.
+
+Documentation that previously described the summary as the idempotency signal has been
+corrected in `docs/implementation-plan.md`, `docs/security-and-approvals.md`, and the
+`minds:smoke` checklist.
 
 ### Circles are human-only
 
