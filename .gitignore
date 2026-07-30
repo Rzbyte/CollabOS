@@ -1,0 +1,51 @@
+# ---------------------------------------------------------------------------
+# Secrets — never commit
+# ---------------------------------------------------------------------------
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+secrets/
+.minds/
+
+# ---------------------------------------------------------------------------
+# Dependencies / build output
+# ---------------------------------------------------------------------------
+node_modules/
+.next/
+out/
+build/
+dist/
+next-env.d.ts
+
+# Generated Prisma client (recreated by `prisma generate` on postinstall)
+src/generated/
+
+# ---------------------------------------------------------------------------
+# Test artefacts
+# ---------------------------------------------------------------------------
+coverage/
+playwright-report/
+test-results/
+blob-report/
+.playwright/
+
+# ---------------------------------------------------------------------------
+# Tooling / OS
+# ---------------------------------------------------------------------------
+.DS_Store
+*.log
+npm-debug.log*
+.eslintcache
+.tsbuildinfo
+*.tsbuildinfo
+.vscode/
+.idea/
+
+# ---------------------------------------------------------------------------
+# CollabOS project deliverable.
+# CLAUDE.md is required by the spec but is excluded by this machine's GLOBAL
+# gitignore (~/.config/git/ignore). This negation re-includes it for this repo.
+# ---------------------------------------------------------------------------
+!CLAUDE.md

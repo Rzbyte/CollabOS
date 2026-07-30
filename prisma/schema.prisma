@@ -1,0 +1,497 @@
+// CollabOS operational database.
+//
+// Governing rule: "Minds owns contextual memory. CollabOS owns operational state."
+// Nothing in this schema stores a judgement the Mind should be making, and no
+// operational fact (status, deadline, audit trail) is ever left to chat history.
+
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// ---------------------------------------------------------------------------
+// Enums
+// ---------------------------------------------------------------------------
+
+/// Campaign lifecycle. Every value here is reachable; transitions are enforced
+/// by src/lib/campaign/transition.ts, which is the ONLY writer of this column.
+enum CampaignStatus {
+  draft
+  objective_submitted
+  partners_recommended
+  partner_approved
+  outreach_approval_required
+  outreach_approved
+  outreach_sent
+  partner_accepted
+  circle_add_pending
+  circle_added
+  campaign_active
+  awaiting_deliverable
+  follow_up_due
+  follow_up_generating
+  follow_up_sent
+  deliverable_received
+  final_approval_required
+  completed
+  cancelled
+  failed
+}
+
+/// The Mind's verdict on a candidate. Mirrors the Zod schema in
+/// src/lib/minds/schemas.ts so a validated Mind response maps 1:1 to a row.
+enum RecommendationVerdict {
+  recommended
+  consider
+  reject
+}
+
+enum RelationshipStatus {
+  none
+  contacted
+  active
+  collaborated
+  declined
+  opted_out
+}
+
+enum ApprovalActionType {
+  partner_selection
+  first_outreach
+  final_deliverable
+  circle_removal
+}
+
+enum ApprovalStatus {
+  pending
+  approved
+  rejected
+}
+
+enum DeliverableStatus {
+  pending
+  awaiting_submission
+  submitted
+  approved
+  rejected
+}
+
+/// Execution lifecycle of a single agent action. `attempted` and `succeeded` are
+/// deliberately distinct so a failed external call can never render as success.
+enum AgentActionStatus {
+  proposed
+  awaiting_approval
+  approved
+  rejected
+  attempted
+  succeeded
+  failed
+  skipped
+}
+
+enum CircleMembershipStatus {
+  pending
+  active
+  already_member
+  removed
+  failed
+}
+
+enum OutboundMessageKind {
+  outreach
+  follow_up
+  completion_notice
+}
+
+/// Why CollabOS talked to the Mind. Useful for the demo: judges can see exactly
+/// which reasoning steps were delegated to the Mind.
+enum MindExchangePurpose {
+  partner_ranking
+  partner_ranking_repair
+  campaign_brief
+  follow_up_message
+  campaign_debrief
+  connectivity_check
+}
+
+// ---------------------------------------------------------------------------
+// Core records
+// ---------------------------------------------------------------------------
+
+model CreatorProfile {
+  id        String   @id @default(cuid())
+  name      String
+  niche     String
+  targetAudience String
+  brandVoice     String
+  /// Hard brand boundaries. The Mind is told these are non-negotiable.
+  prohibitedTopics String[]
+
+  /// Stable account-level alias bound to the Mind via ensureConversation().
+  /// Reusing one alias across sessions is what gives CollabOS continuity.
+  mindConversationAlias String  @unique
+  mindConversationId    String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  campaigns     Campaign[]
+  relationships Relationship[]
+}
+
+model Partner {
+  id                       String  @id @default(cuid())
+  name                     String
+  email                    String  @unique
+  niche                     String
+  audienceDescription      String
+  collaborationPreferences String
+  /// Raw audience size. Stored because the Mind must be able to reason that it
+  /// is NOT the deciding factor — deliberately de-emphasised in the UI.
+  audienceSize             Int
+  reliabilityScore         Float?
+  /// Brand-safety markers, e.g. ["leverage_trading"]. Drives hard blocking.
+  safetyFlags              String[]
+  /// Every seeded partner is synthetic demo data. Surfaced in the UI as such.
+  isSynthetic              Boolean @default(true)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  relationships   Relationship[]
+  campaigns       Campaign[]
+  recommendations PartnerRecommendation[]
+}
+
+/// Persistent relationship memory — the thing a stateless chatbot cannot keep.
+/// Written back on campaign completion so the next recommendation is better.
+model Relationship {
+  id        String @id @default(cuid())
+  creatorId String
+  partnerId String
+
+  status                     RelationshipStatus @default(none)
+  previousResponse           String?
+  rejectionReason            String?
+  collaborationCount         Int                @default(0)
+  performanceScore           Float?
+  reliabilityScore           Float?
+  preferredCommunicationStyle String?
+  lastContactedAt            DateTime?
+  /// Set when a partner asks not to be contacted again. Hard block on outreach.
+  optedOut                   Boolean            @default(false)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  creator CreatorProfile @relation(fields: [creatorId], references: [id], onDelete: Cascade)
+  partner Partner        @relation(fields: [partnerId], references: [id], onDelete: Cascade)
+
+  @@unique([creatorId, partnerId])
+  @@index([partnerId])
+}
+
+model Campaign {
+  id        String         @id @default(cuid())
+  creatorId String
+  objective String
+  status    CampaignStatus @default(draft)
+
+  approvedPartnerId String?
+
+  /// Campaign-level deadline.
+  deadline DateTime?
+  /// When the worker should next consider this campaign. NULL = nothing due.
+  nextActionAt DateTime?
+  /// Autonomous follow-ups already sent. Capped at 1 (§15.4); the hard guarantee
+  /// is the unique dedupeKey on AgentAction, this is the readable counter.
+  followUpCount Int @default(0)
+
+  /// Worker lease. A crashed worker's claim expires instead of wedging the row.
+  lockedBy    String?
+  lockedUntil DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  creator         CreatorProfile          @relation(fields: [creatorId], references: [id], onDelete: Cascade)
+  approvedPartner Partner?                @relation(fields: [approvedPartnerId], references: [id], onDelete: SetNull)
+  recommendations PartnerRecommendation[]
+  approvals       Approval[]
+  deliverables    Deliverable[]
+  agentActions    AgentAction[]
+  circleMembers   CircleMembership[]
+  brief           CampaignBrief?
+  outcome         CampaignOutcome?
+  messages        OutboundMessage[]
+  mindExchanges   MindExchange[]
+
+  /// Drives the worker's due-work query.
+  @@index([status, nextActionAt])
+  @@index([creatorId])
+}
+
+/// One validated row per candidate, produced from a Zod-checked Mind response.
+model PartnerRecommendation {
+  id         String @id @default(cuid())
+  campaignId String
+  partnerId  String
+
+  rank           Int
+  fitScore       Float
+  recommendation RecommendationVerdict
+  reasons        String[]
+  risks          String[]
+  /// Which remembered facts the Mind said it used. Rendered in Partner Review as
+  /// direct evidence that memory influenced the decision rather than decorating it.
+  memoryUsed     String[]
+
+  /// Pointer to the Mind reply this row came from (a MindExchange id), not a copy
+  /// of the raw payload.
+  rawMindResponseReference String?
+
+  createdAt DateTime @default(now())
+
+  campaign Campaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  partner  Partner  @relation(fields: [partnerId], references: [id], onDelete: Cascade)
+
+  @@unique([campaignId, partnerId])
+  @@index([campaignId, rank])
+}
+
+/// Human control gate. No approval row in `approved` state means the guarded
+/// action must not execute.
+model Approval {
+  id         String             @id @default(cuid())
+  campaignId String
+  actionType ApprovalActionType
+  payload    Json
+  status     ApprovalStatus     @default(pending)
+
+  requestedAt DateTime  @default(now())
+  approvedAt  DateTime?
+  rejectedAt  DateTime?
+  /// Free-text reason captured on rejection.
+  decisionNote String?
+
+  campaign Campaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+
+  @@index([campaignId, status])
+}
+
+model Deliverable {
+  id          String            @id @default(cuid())
+  campaignId  String
+  title       String
+  description String
+  status      DeliverableStatus @default(pending)
+
+  dueAt       DateTime?
+  submittedAt DateTime?
+  approvedAt  DateTime?
+
+  /// Collaborator-supplied reference. Local test data in this milestone.
+  submissionUrl  String?
+  submissionNote String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  campaign Campaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+
+  @@index([campaignId])
+}
+
+/// The audit log. Five separate timestamps rather than one mutable "status_at"
+/// so proposed → approved → attempted → succeeded/failed remain independently
+/// provable after the fact. The Activity Log renders one entry per non-null
+/// timestamp, which is why a failed action keeps `attemptedAt` set and
+/// `executedAt` NULL forever.
+model AgentAction {
+  id            String  @id @default(cuid())
+  campaignId    String?
+  /// Groups every action belonging to one logical operation.
+  correlationId String
+  actionType    String
+  /// Human-readable line for the Activity Log.
+  summary       String
+  /// Why the agent believed this action was appropriate.
+  reason        String?
+
+  status           AgentActionStatus
+  requiresApproval Boolean           @default(false)
+  /// True only for autonomous work (no human in the loop at execution time).
+  autonomous       Boolean           @default(false)
+
+  proposedAt  DateTime?
+  approvedAt  DateTime?
+  attemptedAt DateTime?
+  executedAt  DateTime?
+  failedAt    DateTime?
+
+  /// Provider-side identifier (message id, Circle mutation reference, …).
+  externalReference String?
+  /// Named transport so the UI can label test delivery honestly.
+  transport         String?
+
+  errorCode             String?
+  /// Scrubbed before storage — never contains an API key or raw provider body.
+  sanitisedErrorMessage String?
+
+  /// Database-enforced single-execution guarantee (e.g. the one follow-up).
+  dedupeKey String? @unique
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  campaign Campaign? @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+
+  @@index([campaignId, createdAt])
+  @@index([correlationId])
+}
+
+/// Result of a real Circle mutation against the Minds platform. Rendered
+/// directly by the UI, so a failed mutation shows `failed` and never `active`.
+model CircleMembership {
+  id         String  @id @default(cuid())
+  campaignId String
+  mindId     String
+  /// Always sourced from COLLABORATOR_TEST_EMAIL — never from browser input.
+  collaboratorEmail String
+
+  status CircleMembershipStatus @default(pending)
+
+  addedAt   DateTime?
+  removedAt DateTime?
+
+  /// Sanitised summary of the platform's mutation response.
+  externalReference String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  campaign Campaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+
+  @@unique([campaignId, collaboratorEmail])
+  @@index([mindId])
+}
+
+/// Shared brief. Authored by the Mind, stored operationally by CollabOS.
+model CampaignBrief {
+  id         String @id @default(cuid())
+  campaignId String @unique
+
+  title         String
+  summary       String
+  talkingPoints String[]
+  toneNotes     String?
+  successMetric String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  campaign Campaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+}
+
+/// Closing record for a completed campaign — the learning loop.
+///
+/// Split deliberately into three kinds of data, because conflating them is how a system
+/// starts fabricating metrics:
+///
+///   1. OBSERVED facts CollabOS actually witnessed (timeliness, whether a reminder was
+///      needed). Trustworthy.
+///   2. A reliability score COMPUTED from those observed facts by a documented formula.
+///      Derived, not measured.
+///   3. Audience performance, which CollabOS CANNOT measure — there is no analytics
+///      integration. Only ever creator-reported, and nullable so "unknown" is
+///      representable rather than silently defaulted to a number.
+///
+/// The Mind's debrief fields are nullable too: campaign completion must never depend on the
+/// Mind being reachable.
+model CampaignOutcome {
+  id         String @id @default(cuid())
+  campaignId String @unique
+
+  // --- observed ---
+  submittedOnTime Boolean
+  hoursLate       Float?
+  neededFollowUp  Boolean
+
+  // --- computed from the observed facts above ---
+  reliabilityBefore Float?
+  reliabilityAfter  Float?
+
+  /// Creator-reported only. NEVER inferred, estimated, or defaulted.
+  creatorReportedPerformance Float?
+
+  // --- Mind debrief (absent when the Mind was unreachable) ---
+  whatWorked               String[]
+  whatToImprove            String[]
+  futurePartnerGuidance    String?
+  debriefMemoryUsed        String[]
+  debriefExchangeReference String?
+
+  createdAt DateTime @default(now())
+
+  campaign Campaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+}
+
+/// Exactly what the test transport sent, kept so the demo can prove the message
+/// body was authored by the Mind rather than templated by CollabOS.
+model OutboundMessage {
+  id         String              @id @default(cuid())
+  campaignId String
+  kind       OutboundMessageKind
+
+  /// e.g. "mailpit" — surfaced in the UI as "Local test transport".
+  transport String
+  toEmail   String
+  subject   String
+  body      String
+
+  sentAt            DateTime?
+  externalReference String?
+
+  createdAt DateTime @default(now())
+
+  campaign Campaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+
+  @@index([campaignId, createdAt])
+}
+
+/// Verifiable record of each Mind interaction. Contains only prompts about
+/// synthetic seeded partners and the Mind's replies — never credentials.
+model MindExchange {
+  id            String              @id @default(cuid())
+  campaignId    String?
+  correlationId String
+  purpose       MindExchangePurpose
+
+  alias String
+  /// History fingerprint captured BEFORE sending, used as the reply baseline.
+  baselineFingerprint String?
+  replyFingerprint    String?
+
+  requestText String
+  replyText   String?
+
+  /// False when the reply failed Zod validation.
+  validated Boolean @default(false)
+  latencyMs Int?
+
+  /// True when the reply came from the offline FIXTURE Mind rather than the real platform.
+  /// Persisted so a canned response can never be mistaken for a genuine one after the fact,
+  /// however the row is later read or exported.
+  fixtureMode Boolean @default(false)
+
+  createdAt DateTime @default(now())
+
+  campaign Campaign? @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+
+  @@index([campaignId, createdAt])
+  @@index([correlationId])
+}

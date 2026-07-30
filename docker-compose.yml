@@ -1,0 +1,43 @@
+# Local development infrastructure for CollabOS.
+#
+# Postgres is the real operational database (never swapped for SQLite).
+# Mailpit is a LOCAL TEST EMAIL TRANSPORT — it captures every outbound message
+# and never delivers to the public internet. Nothing here sends real outreach.
+services:
+  postgres:
+    image: postgres:17-alpine
+    container_name: collabos-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: collabos
+      POSTGRES_PASSWORD: collabos
+      POSTGRES_DB: collabos
+    ports:
+      - "5432:5432"
+    volumes:
+      - collabos-pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U collabos -d collabos"]
+      interval: 3s
+      timeout: 5s
+      retries: 20
+
+  # Local test transport only. SMTP on 1025, web UI on 8025.
+  mailpit:
+    image: axllent/mailpit:latest
+    container_name: collabos-mailpit
+    restart: unless-stopped
+    environment:
+      MP_SMTP_AUTH_ACCEPT_ANY: 1
+      MP_SMTP_AUTH_ALLOW_INSECURE: 1
+    ports:
+      - "1025:1025" # SMTP
+      - "8025:8025" # Web UI — open http://localhost:8025
+    healthcheck:
+      test: ["CMD", "/mailpit", "readyz"]
+      interval: 3s
+      timeout: 5s
+      retries: 20
+
+volumes:
+  collabos-pgdata:
