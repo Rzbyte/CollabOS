@@ -326,24 +326,47 @@ Platform details that shaped the implementation:
 Complete these to unblock every \`BLOCKED\` row above, then re-run
 \`npm run minds:smoke\`.
 
-1. **Create a Builder API key**
-   Visit <https://build.hellominds.ai/console> → sign in → **Keys** → **Create**.
-   Copy the value once; it is not shown again.
+1. **Create a Mind first — this must be done in the web UI.**
+   Visit <https://hellominds.ai/profile>. The official docs state "you need at least one Mind
+   before Builder Tools can route messages", and \`minds mind\` has **no \`create\`
+   subcommand** (only \`show\`/\`disable\`/\`enable\`/\`skills\`/\`apps\`), so the CLI cannot do this
+   step. Your account becomes the Mind's permanent **Steward**.
 
-2. **Put it in \`.env\`** (gitignored — never commit it)
+2. **Create a Builder API key**
+   Visit <https://build.hellominds.ai/console> → sign in → **Keys** → **Create**.
+   Per the docs: "add a name and expiry, then copy the token when it appears. It is shown
+   only once."
+
+   ⚠️ Note the **expiry** — set it long enough for your work. When it lapses, CollabOS
+   surfaces \`MINDS_UNAUTHORISED\` ("Verify MINDS_BUILDER_API_KEY") rather than a confusing
+   failure.
+
+3. **Put it in \`.env\`** (gitignored — never commit it)
    \`\`\`env
    MINDS_BUILDER_API_KEY=<paste key>
    \`\`\`
 
-3. **Find your Mind ID**
+4. **Find your Mind ID — it is a UUID, not the display name**
    \`\`\`bash
    minds list --pretty
+   # or directly:
+   minds list | jq -r '.items[0].mindId'
    \`\`\`
-   Copy the \`mindId\` of the Mind that will act as Creator Partnership Director, or
-   create one at <https://hellominds.ai/profile>.
    \`\`\`env
-   MINDS_MIND_ID=<paste mindId>
+   MINDS_MIND_ID=<paste the UUID>
    \`\`\`
+
+   You do **not** need \`minds chat create\`. CollabOS calls \`ensureConversation()\` itself
+   using the creator's stored alias (\`collabos-maya\`), and that call is idempotent — a
+   manually created alias would just sit unused.
+
+5. **Check the Mind has cognition to spend**
+   \`\`\`bash
+   minds cognition balance --mind "$MINDS_MIND_ID"
+   \`\`\`
+   No waitlist, approval, or funding step is documented as a prerequisite, but a Mind with a
+   zero balance cannot reason even with valid credentials. CollabOS shows this figure on the
+   Command Center.
 
 4. **Set a collaborator inbox you control.** This is the only address CollabOS will
    ever add to the Circle.

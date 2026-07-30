@@ -47,7 +47,19 @@ const EnvSchema = z.object({
 
   // --- Autonomy timing ---
   FOLLOW_UP_DELAY_SECONDS: z.coerce.number().int().positive().default(180),
-  MINDS_REPLY_TIMEOUT_MS: z.coerce.number().int().positive().default(120_000),
+
+  /**
+   * Mind reply timeout.
+   *
+   * Measured against the live platform: a partner-ranking call on `minimax/minimax-m3` took
+   * **144 seconds**. The original 120s default therefore timed out on a perfectly healthy
+   * Mind and surfaced as "could not produce recommendations", which was misleading. 240s
+   * gives ~66% headroom over the observed worst case while still failing in a bounded time.
+   *
+   * Note this timeout is NOT retried inside `ask()` — a duplicate `sendMessage` would post
+   * the same question twice — so raising it does not multiply the wait.
+   */
+  MINDS_REPLY_TIMEOUT_MS: z.coerce.number().int().positive().default(240_000),
 
   LINK_SIGNING_SECRET: z.string().default(""),
 });
