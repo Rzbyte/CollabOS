@@ -159,8 +159,12 @@ npm run db:seed      # load the demo scenario
 ### 5. Run
 
 ```bash
-npm run dev
+npm run dev -- -p 3100
 ```
+
+The port is not optional. `next dev` defaults to 3000, but `APP_URL` is `http://localhost:3100`
+— serve on the wrong port and the signed acceptance link in the outbound email points at a
+server that isn't there, which breaks the collaborator step mid-demo.
 
 ### 6. Run the worker
 

@@ -14,6 +14,8 @@ import type {
   AskOptions,
   CircleAddResult,
   CircleRemoveResult,
+  CognitionToolUsage,
+  CognitionToolUse,
   MindAskResult,
   MindSummary,
   MindsPort,
@@ -31,6 +33,7 @@ export class ScriptedMindsPort implements MindsPort {
   private readonly configured: boolean;
   private circle: CircleMember[];
   private cognition: number;
+  private readonly toolUsage: CognitionToolUse[];
   /** When set, every Circle addition fails — exercises the "no false success" path. */
   private readonly circleAddError: Error | null;
 
@@ -39,12 +42,14 @@ export class ScriptedMindsPort implements MindsPort {
     configured?: boolean;
     circle?: CircleMember[];
     cognition?: number;
+    toolUsage?: CognitionToolUse[];
     circleAddError?: Error;
   }) {
     this.replies = [...(options?.replies ?? [])];
     this.configured = options?.configured ?? true;
     this.circle = [...(options?.circle ?? [])];
     this.cognition = options?.cognition ?? 5000;
+    this.toolUsage = [...(options?.toolUsage ?? [])];
     this.circleAddError = options?.circleAddError ?? null;
   }
 
@@ -91,6 +96,16 @@ export class ScriptedMindsPort implements MindsPort {
 
   async getCognitionBalance(): Promise<number> {
     return this.cognition;
+  }
+
+  async getCognitionToolUsage(): Promise<CognitionToolUsage> {
+    // Totals are derived, not scripted, so the double cannot disagree with itself the way
+    // a hand-set total could.
+    return {
+      tools: [...this.toolUsage],
+      totalCredits: this.toolUsage.reduce((sum, row) => sum + row.creditsUsed, 0),
+      totalCalls: this.toolUsage.reduce((sum, row) => sum + row.callCount, 0),
+    };
   }
 
   async ensureConversation(alias: string): Promise<void> {

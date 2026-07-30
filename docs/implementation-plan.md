@@ -81,6 +81,7 @@ official client library covers 100% of the capabilities `CLAUDE.md` §10 asks fo
 | Wait for replies | `waitForReply({ alias, timeoutMs, afterFingerprint })` | Yes |
 | Read conversation history | `getHistory(alias, { limit, after })` | Yes |
 | Cognition balance | `getCognitionBalance(mindId)` → `{ mindId, cognition }` | Yes |
+| Per-tool cognition spend | `getCognitionUsageByTool(mindId, { interval })` → `{ summary, timeline }` | Yes |
 | Read Circle membership | `getCircle(mindId)` → `CircleMember[]` | Yes |
 | Add human collaborator | `addCircleMembers(mindId, { emails, isActive })` | Yes |
 | Remove human collaborator | `removeCircleMembers(mindId, { emails })` | Yes |

@@ -82,6 +82,30 @@ export interface AskOptions {
   timeoutMs?: number;
 }
 
+/** One tool the Mind actually invoked, with what it cost. */
+export interface CognitionToolUse {
+  tool: string;
+  callCount: number;
+  creditsUsed: number;
+  firstUsed: string | null;
+  lastUsed: string | null;
+}
+
+/**
+ * Per-tool cognition spend for the configured Mind.
+ *
+ * IMPORTANT: this is **Mind-wide**, not campaign-scoped. The platform bills cognition
+ * against the Mind, and the Builder API exposes no campaign dimension, so these totals
+ * include smoke tests and every earlier campaign. Any UI that renders this must say so —
+ * presenting it as one campaign's cost would be exactly the fabricated metric §18 bans.
+ */
+export interface CognitionToolUsage {
+  /** Highest spend first. */
+  tools: CognitionToolUse[];
+  totalCredits: number;
+  totalCalls: number;
+}
+
 /**
  * The seam between CollabOS and the Minds platform.
  *
@@ -94,6 +118,7 @@ export interface MindsPort {
   checkReachability(): Promise<{ reachable: boolean; detail: string }>;
   validateMind(): Promise<MindSummary>;
   getCognitionBalance(): Promise<number>;
+  getCognitionToolUsage(): Promise<CognitionToolUsage>;
   ensureConversation(alias: string): Promise<void>;
   ask(options: AskOptions): Promise<MindAskResult>;
   getRecentHistory(alias: string, limit?: number): Promise<MessageRecord[]>;
@@ -230,6 +255,48 @@ export class MindsClientAdapter implements MindsPort {
         AbortSignal.timeout(READ_TIMEOUT_MS),
       );
       return balance.cognition;
+    });
+  }
+
+  /**
+   * Reads per-tool cognition spend.
+   *
+   * Evidence that the Mind does tool work rather than only producing text — the balance
+   * alone is a number, whereas this shows which capabilities were exercised.
+   *
+   * Rows are normalised defensively. The Circle summary taught us that this platform can
+   * return shapes the published types do not promise (a genuine add reported all-zero
+   * counters), so nothing here assumes a field is present or numeric.
+   */
+  async getCognitionToolUsage(): Promise<CognitionToolUsage> {
+    const correlationId = newCorrelationId();
+    this.requireConfigured(correlationId);
+
+    return this.withRetry("getCognitionUsageByTool", correlationId, async () => {
+      const response = await this.client.getCognitionUsageByTool(this.mindId, {
+        // This endpoint accepts hour | day | week | month only — NOT the finer intervals
+        // `getCognitionUsage` takes. `day` keeps a demo that crosses midnight readable.
+        interval: "day",
+        signal: AbortSignal.timeout(READ_TIMEOUT_MS),
+      });
+
+      const rows: unknown = response.summary;
+      const tools: CognitionToolUse[] = (Array.isArray(rows) ? rows : [])
+        .map((row: Record<string, unknown>) => ({
+          tool: typeof row.tool === "string" && row.tool !== "" ? row.tool : "(unnamed)",
+          callCount: Number(row.callCount ?? 0),
+          creditsUsed: Number(row.creditsUsed ?? 0),
+          firstUsed: typeof row.firstUsed === "string" ? row.firstUsed : null,
+          lastUsed: typeof row.lastUsed === "string" ? row.lastUsed : null,
+        }))
+        .filter((row) => Number.isFinite(row.callCount) && Number.isFinite(row.creditsUsed))
+        .sort((a, b) => b.creditsUsed - a.creditsUsed);
+
+      return {
+        tools,
+        totalCredits: tools.reduce((sum, row) => sum + row.creditsUsed, 0),
+        totalCalls: tools.reduce((sum, row) => sum + row.callCount, 0),
+      };
     });
   }
 

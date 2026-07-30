@@ -18,8 +18,30 @@ import {
   getReportCampaign,
 } from "../../lib/campaign/queries.ts";
 import { CampaignStatus, STATUS_LABELS } from "../../lib/campaign/states.ts";
+import { getMindsPort, type CognitionToolUsage } from "../../lib/minds/client.ts";
+import { toCollabOsMindsError } from "../../lib/minds/errors.ts";
 
 export const dynamic = "force-dynamic";
+
+/**
+ * Reads per-tool cognition spend, degrading honestly.
+ *
+ * Follows the same contract as the Command Center's balance read: an unreachable Mind
+ * renders as unavailable with the reason, never as a crashed page or an invented figure.
+ */
+async function readToolUsage(): Promise<{
+  usage: CognitionToolUsage | null;
+  error: string | null;
+}> {
+  const port = getMindsPort();
+  if (!port.isConfigured()) return { usage: null, error: "Mind not connected" };
+
+  try {
+    return { usage: await port.getCognitionToolUsage(), error: null };
+  } catch (error) {
+    return { usage: null, error: toCollabOsMindsError(error).message };
+  }
+}
 
 export default async function CampaignReportPage() {
   const campaign = await getReportCampaign();
@@ -39,9 +61,10 @@ export default async function CampaignReportPage() {
     );
   }
 
-  const [phases, relationships] = await Promise.all([
+  const [phases, relationships, toolUsage] = await Promise.all([
     getPhaseCounts(campaign.id),
     getRelationships(campaign.creatorId),
+    readToolUsage(),
   ]);
 
   const partner = campaign.approvedPartner;
@@ -191,6 +214,91 @@ export default async function CampaignReportPage() {
               </Link>
               .
             </p>
+          )}
+        </Panel>
+
+        {/* ------------------------------------------- platform-side execution */}
+        <Panel
+          title="Cognition spent by tool"
+          subtitle="Read live from the Minds Builder API"
+        >
+          {toolUsage.usage === null ? (
+            <p className="text-sm text-ink-faint">Unavailable — {toolUsage.error}</p>
+          ) : toolUsage.usage.tools.length === 0 ? (
+            <p className="text-sm text-ink-faint">
+              The platform reports no tool usage for this Mind yet.
+            </p>
+          ) : (
+            <>
+              <div className="-mx-5 overflow-x-auto px-5">
+                <table className="w-full min-w-[30rem] border-collapse text-sm">
+                  <caption className="sr-only">
+                    Cognition consumed per tool by the configured Mind
+                  </caption>
+                  <thead>
+                    <tr className="border-b border-edge text-left">
+                      <th
+                        scope="col"
+                        className="pb-2 text-xs font-medium tracking-wide text-ink-faint uppercase"
+                      >
+                        Tool
+                      </th>
+                      <th
+                        scope="col"
+                        className="pb-2 text-right text-xs font-medium tracking-wide text-ink-faint uppercase"
+                      >
+                        Calls
+                      </th>
+                      <th
+                        scope="col"
+                        className="pb-2 text-right text-xs font-medium tracking-wide text-ink-faint uppercase"
+                      >
+                        Cognition
+                      </th>
+                      <th
+                        scope="col"
+                        className="pb-2 text-right text-xs font-medium tracking-wide text-ink-faint uppercase"
+                      >
+                        Last used
+                      </th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {toolUsage.usage.tools.map((row) => (
+                      <tr key={row.tool} className="border-b border-edge/50">
+                        <td className="py-2 pr-3">
+                          <code className="font-mono text-xs">{row.tool}</code>
+                        </td>
+                        <td className="py-2 text-right tabular-nums">{row.callCount}</td>
+                        <td className="py-2 text-right tabular-nums">
+                          {row.creditsUsed.toFixed(2)}
+                        </td>
+                        <td className="py-2 text-right">
+                          <code className="font-mono text-xs text-ink-faint">
+                            {row.lastUsed?.slice(0, 16).replace("T", " ") ?? "—"}
+                          </code>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+
+              <dl className="mt-5 grid gap-5 border-t border-edge pt-4 sm:grid-cols-3">
+                <Field label="Distinct tools">{toolUsage.usage.tools.length}</Field>
+                <Field label="Total tool calls">{toolUsage.usage.totalCalls}</Field>
+                <Field label="Cognition on tools">
+                  {toolUsage.usage.totalCredits.toFixed(2)}
+                </Field>
+              </dl>
+
+              <p className="mt-4 rounded-md border border-edge bg-surface/40 px-3 py-2.5 text-xs text-ink-faint">
+                Mind-wide, not campaign-scoped. The platform bills cognition against the
+                Mind and exposes no campaign dimension, so these totals also include smoke
+                tests and any earlier campaign. Read directly from the Builder API — not
+                computed by CollabOS.
+              </p>
+            </>
           )}
         </Panel>
 

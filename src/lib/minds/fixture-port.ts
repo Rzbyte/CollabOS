@@ -34,6 +34,7 @@ import type {
   AskOptions,
   CircleAddResult,
   CircleRemoveResult,
+  CognitionToolUsage,
   MindAskResult,
   MindSummary,
   MindsPort,
@@ -272,6 +273,12 @@ export class FixtureMindsPort implements MindsPort {
   async getCognitionBalance(): Promise<number> {
     // Deliberately not a plausible-looking balance.
     return 0;
+  }
+
+  async getCognitionToolUsage(): Promise<CognitionToolUsage> {
+    // Deliberately empty rather than plausible: invented tool names would be
+    // indistinguishable from real platform usage in a screenshot.
+    return { tools: [], totalCredits: 0, totalCalls: 0 };
   }
 
   async ensureConversation(): Promise<void> {

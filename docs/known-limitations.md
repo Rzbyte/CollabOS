@@ -244,6 +244,24 @@ result passed as `waitForReply({ afterFingerprint })`. Without the baseline a re
 a previous turn can be misread as the answer to the current question. Not obvious from
 the method signatures alone.
 
+### Cognition is billed per Mind, with no campaign dimension
+
+`getCognitionUsageByTool()` reports spend per tool for the whole Mind. The Builder API
+offers no way to attribute cognition to a campaign, a conversation, or a single question,
+so the report's "Cognition spent by tool" panel is **Mind-wide** — it includes smoke tests
+and every earlier campaign. The panel states that on its face; presenting the figure as
+one campaign's cost would be the fabricated metric §18 prohibits.
+
+Two further notes on this endpoint:
+
+- `interval` accepts `hour | day | week | month` **only**, unlike `getCognitionUsage()`
+  which also takes `1m`, `5m`, `15m`, `1h`, `1d`, `1w`, `1M`. Passing a fine-grained value
+  here is a silent contract mismatch.
+- Observed tools on this Mind are `LLM_Turn`, `SKILL_LoadPlaybook`, `ANALYST_Synthesize`,
+  and `CONTENT_Write`. Which internal tool a given prompt triggers is the platform's
+  decision, not something a builder selects, so CollabOS cannot map a tool row back to a
+  specific campaign step.
+
 ---
 
 ## 4. Stack constraints discovered
