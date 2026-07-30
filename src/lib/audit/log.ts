@@ -82,55 +82,15 @@ export async function beginAction(input: BeginActionInput): Promise<string> {
 }
 
 /**
- * Like `beginAction`, but returns `null` instead of throwing when `dedupeKey` is
- * already taken.
+ * Note on the `dedupeKey` guarantee.
  *
- * This is the concurrency primitive behind "at most one autonomous follow-up": two
- * workers racing on the same campaign both attempt the insert, Postgres admits
- * exactly one, and the loser stands down cleanly.
+ * The unique index on `AgentAction.dedupeKey` is what makes "at most one autonomous
+ * follow-up" a database fact rather than an application convention. The worker does NOT go
+ * through a helper here — it writes the marker row inline at its commit point
+ * (`src/worker/follow-up.ts`), together with the `followUpCount` compare-and-swap and the
+ * `follow_up_sent` transition, so all three land in one transaction. Extracting that into a
+ * helper would have moved the insert outside the transaction and weakened the guarantee.
  */
-export async function claimAction(
-  input: BeginActionInput & { dedupeKey: string },
-): Promise<string | null> {
-  try {
-    return await beginAction(input);
-  } catch (error) {
-    if (isUniqueViolation(error)) return null;
-    throw error;
-  }
-}
-
-/** Postgres unique-constraint violation, surfaced by Prisma as P2002. */
-export function isUniqueViolation(error: unknown): boolean {
-  return (
-    typeof error === "object" &&
-    error !== null &&
-    "code" in error &&
-    (error as { code?: unknown }).code === "P2002"
-  );
-}
-
-export async function markApproved(
-  actionId: string,
-  options?: { db?: DbClient },
-): Promise<void> {
-  const db = options?.db ?? prisma;
-  await db.agentAction.update({
-    where: { id: actionId },
-    data: { status: AgentActionStatus.approved, approvedAt: getClock().now() },
-  });
-}
-
-export async function markRejected(
-  actionId: string,
-  options?: { db?: DbClient },
-): Promise<void> {
-  const db = options?.db ?? prisma;
-  await db.agentAction.update({
-    where: { id: actionId },
-    data: { status: AgentActionStatus.rejected, failedAt: getClock().now() },
-  });
-}
 
 /** Records that execution has started — written before the external call. */
 export async function markAttempted(
@@ -193,20 +153,6 @@ export async function markFailed(
   });
 }
 
-export async function markSkipped(
-  actionId: string,
-  reason: string,
-  options?: { db?: DbClient },
-): Promise<void> {
-  const db = options?.db ?? prisma;
-  await db.agentAction.update({
-    where: { id: actionId },
-    data: {
-      status: AgentActionStatus.skipped,
-      reason: sanitiseErrorMessage(reason).slice(0, 500),
-    },
-  });
-}
 
 /**
  * Records a human approval decision.

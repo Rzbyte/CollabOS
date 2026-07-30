@@ -15,7 +15,6 @@ import type { ZodType } from "zod";
 import { z } from "zod";
 
 import { MindExchangePurpose } from "../../generated/prisma/enums.ts";
-import { getClock } from "../clock.ts";
 import { prisma } from "../db.ts";
 import type { DbClient } from "../audit/log.ts";
 import type { MindsPort } from "./client.ts";
@@ -322,7 +321,3 @@ export async function requestOutreachMessage(input: {
   });
 }
 
-/** Timestamp helper so reasoning code never reads the wall clock directly. */
-export function reasoningNow(): Date {
-  return getClock().now();
-}

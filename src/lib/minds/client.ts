@@ -472,7 +472,3 @@ export function getMindsPort(): MindsPort {
   return singleton;
 }
 
-/** Test seam. */
-export function setMindsPort(port: MindsPort | null): void {
-  singleton = port;
-}

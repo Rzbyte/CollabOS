@@ -160,12 +160,4 @@ export function getEmailTransport(): EmailTransport {
   return singleton;
 }
 
-/** Test seam. */
-export function setEmailTransport(transport: EmailTransport | null): void {
-  singleton = transport;
-}
 
-/** Deep link to the captured message in the Mailpit web UI. */
-export function mailpitInboxUrl(): string {
-  return loadEnv().mailpitWebUrl;
-}

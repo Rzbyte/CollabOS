@@ -20,7 +20,6 @@ import type { Prisma } from "../../generated/prisma/client.ts";
 import { type DbClient, logEvent } from "../audit/log.ts";
 import { prisma } from "../db.ts";
 import {
-  CAMPAIGN_TRANSITIONS,
   CampaignStatus,
   IllegalTransitionError,
   STATUS_LABELS,
@@ -140,22 +139,4 @@ async function applyTransition(
   return { changed: true, from, to: input.to, campaign };
 }
 
-/**
- * Updates scheduling columns WITHOUT changing state.
- *
- * Separate from `transitionCampaign` so that "when should the worker look at this
- * next" never becomes an excuse to bypass transition validation.
- */
-export async function updateCampaignSchedule(
-  campaignId: string,
-  data: Pick<Prisma.CampaignUpdateInput, "nextActionAt" | "deadline" | "lockedBy" | "lockedUntil">,
-  options?: { db?: DbClient },
-): Promise<Campaign> {
-  const db = options?.db ?? prisma;
-  return db.campaign.update({ where: { id: campaignId }, data });
-}
 
-/** Convenience for the UI: what could legally happen next. */
-export function allowedNextStates(from: CampaignStatus): readonly CampaignStatus[] {
-  return CAMPAIGN_TRANSITIONS[from];
-}

@@ -208,9 +208,6 @@ export async function getOutboundMessages(campaignId: string) {
   });
 }
 
-export async function countPartners(): Promise<number> {
-  return prisma.partner.count();
-}
 
 /**
  * Most recently completed campaign, else the latest campaign of any kind.
